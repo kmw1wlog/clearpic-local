@@ -1,2 +1,3 @@
 .server-child.pid
 server.log
+.vercel

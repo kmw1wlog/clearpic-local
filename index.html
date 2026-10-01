@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="이미지의 불필요한 표시를 기기 안에서 정리하는 로컬 이미지 클린업 도구">
+  <title>ClearPic Local — 로컬 이미지 정리 도구</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='17' fill='%23b8ff56'/%3E%3Cpath d='m32 10 4 16 16 6-16 5-4 17-5-17-16-5 16-6z' fill='%23151917'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">✦</span><span>ClearPic <b>LOCAL</b></span></a>
+    <div class="top-center"><span class="privacy"><i></i>이미지는 이 기기를 벗어나지 않습니다</span></div>
+    <div class="top-actions"><button id="undoBtn" disabled>↶ <span>되돌리기</span></button><button id="helpBtn">? <span>도움말</span></button></div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="library">
+      <div class="section-head"><div><p>IMAGE QUEUE</p><h1>작업 이미지</h1></div><span id="imageCount">0</span></div>
+      <label class="dropzone" id="dropzone"><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple><span>＋</span><strong>이미지 가져오기</strong><small>PNG · JPG · WEBP</small></label>
+      <div class="select-row"><label><input id="selectAll" type="checkbox" checked> 전체 선택</label><button id="clearAll">초기화</button></div>
+      <div class="image-list" id="imageList"><div class="empty-list"><span>◫</span><p>이미지를 끌어다 놓으면<br>여기에 작업 목록이 생깁니다.</p></div></div>
+      <div class="engine-card"><div><span class="engine-light loading"></span><div><b id="engineStatus">엔진 확인 중</b><small id="engineDetail">그래픽 환경을 살펴보고 있습니다</small></div></div><span class="mono" id="engineBadge">…</span></div>
+    </aside>
+
+    <section class="studio">
+      <div class="toolstrip">
+        <div class="tool-group"><button class="tool active" data-tool="brush" title="브러시"><i>●</i><span>브러시</span></button><button class="tool" data-tool="erase" title="마스크 지우개"><i>○</i><span>지우개</span></button></div>
+        <div class="size-control"><span>크기</span><input id="brushSize" type="range" min="4" max="120" value="36"><output id="brushSizeOut">36</output></div>
+        <div class="tool-group right"><button id="autoMaskBtn">✦ 자동 찾기</button><button id="textMaskBtn">T 문구 찾기</button></div>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="welcome" id="welcome">
+          <div class="orb"><span>✦</span></div><p class="kicker">PRIVATE · LOCAL · FAST</p><h2>거슬리는 흔적만<br>깨끗하게 정리하세요.</h2><p>이미지를 불러오면 모든 처리는 브라우저 안에서만 진행됩니다.<br>API도, 로그인도, 업로드도 없습니다.</p><label for="fileInput" class="welcome-button">이미지 선택하기 <span>→</span></label>
+          <div class="feature-line"><span>✓ 여러 장 일괄 처리</span><span>✓ 원본 해상도 유지</span><span>✓ 수동 마스크 편집</span></div>
+        </div>
+        <div class="canvas-stage" id="canvasStage" hidden>
+          <div class="checker"><canvas id="imageCanvas"></canvas><canvas id="maskCanvas"></canvas></div>
+          <div class="zoom-controls"><button id="zoomOut">−</button><span id="zoomLabel">맞춤</span><button id="zoomIn">＋</button></div>
+          <div class="compare-control"><button id="compareBtn">누르고 원본 보기</button></div>
+        </div>
+      </div>
+      <div class="statusbar"><span id="canvasInfo">이미지를 불러오면 크기와 형식이 표시됩니다</span><span class="hint">브러시: B · 지우개: E · 적용: ⌘/Ctrl + Enter</span></div>
+    </section>
+
+    <aside class="actions">
+      <div class="section-head"><div><p>BATCH ACTIONS</p><h2>일괄 작업</h2></div></div>
+      <div class="notice"><span>!</span><p><b>가시적 표시만 정리합니다.</b><br>SynthID 등 비가시성 표식은 변경하지 않습니다.</p></div>
+      <button class="action-card accent" id="batchGemini"><span class="action-icon">✦</span><span><b>Gemini 표시 자동 정리</b><small>선택한 이미지의 고정 위치를 처리</small></span><em id="batchCountA">0장</em></button>
+      <button class="action-card" id="batchText"><span class="action-icon">T</span><span><b>문구 찾아 자동 정리</b><small>OCR로 문구 영역을 찾아 처리</small></span><em id="batchCountB">0장</em></button>
+      <div class="divider"><span>현재 마스크</span></div>
+      <button class="wide-button" id="applyCurrent" disabled><span>선택 영역 정리</span><kbd>⌘↵</kbd></button>
+      <button class="wide-button secondary" id="copyMask" disabled>마스크를 선택한 이미지에 복사</button>
+      <div class="progress-box" id="progressBox" hidden><div><span id="progressLabel">처리 중</span><b id="progressPercent">0%</b></div><progress id="progressBar" max="100" value="0"></progress><button id="cancelProcess">중단</button></div>
+      <div class="divider"><span>내보내기</span></div>
+      <label class="setting-row"><span>크기</span><select id="outputSize"><option value="original">원본 크기</option><option value="1000">가로 최대 1,000px</option><option value="1600">가로 최대 1,600px</option></select></label>
+      <label class="setting-row"><span>형식</span><select id="outputFormat"><option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">WEBP</option></select></label>
+      <label class="setting-row"><span>품질</span><div><input id="quality" type="range" min="60" max="100" value="92"><output id="qualityOut">92%</output></div></label>
+      <button class="download" id="downloadAll" disabled><span>완료 이미지 ZIP 받기</span><i>↓</i></button>
+      <p class="legal-short">본인이 권리를 보유하거나 정당한 허락을 받은 이미지에만 사용하세요.</p>
+    </aside>
+  </main>
+
+  <dialog id="helpDialog"><form method="dialog"><button class="dialog-close">×</button><p class="kicker">HELP · F1</p><h2>ClearPic Local 사용 안내</h2><div class="help-grid"><section><b>01</b><h3>이미지를 넣습니다</h3><p>PNG·JPG·WEBP를 여러 장 끌어다 놓을 수 있습니다. 파일은 외부 서버로 전송되지 않습니다.</p></section><section><b>02</b><h3>지울 곳을 표시합니다</h3><p>자동 찾기는 Gemini의 우측 하단 위치를 칠합니다. 브러시로 직접 수정할 수도 있습니다.</p></section><section><b>03</b><h3>결과를 확인합니다</h3><p>선택 영역 정리를 누른 뒤 원본 비교 버튼으로 결과를 확인하세요.</p></section><section><b>04</b><h3>내려받습니다</h3><p>원본 또는 축소 크기와 파일 형식을 고른 뒤 ZIP으로 저장합니다.</p></section></div><div class="disclaimer"><h3>중요한 안내</h3><p>이 도구는 주변 픽셀을 바탕으로 선택 영역을 추정해 채웁니다. 실제 원본을 복원하는 기능이 아니므로 결과를 반드시 확인하세요. 타인의 워터마크나 상표를 무단 제거하여 이용하면 저작권법·상표법·플랫폼 정책 등에 위배될 수 있습니다. 생성형 AI의 출처를 숨기기 위한 도구가 아니며 SynthID 등 비가시성 표식을 제거하지 않습니다.</p></div><button class="understand">확인했습니다</button></form></dialog>
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
